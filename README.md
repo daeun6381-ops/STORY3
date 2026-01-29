@@ -12,10 +12,11 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase 설정 (코드에서 유실되지 않도록 명시적으로 관리됨)
+        // 시스템 주입 설정을 우선적으로 사용 (API Key 오류 해결 핵심)
         const firebaseConfig = typeof __firebase_config !== 'undefined' 
             ? JSON.parse(__firebase_config) 
             : {
+                apiKey: "", 
                 authDomain: "story2-60345.firebaseapp.com",
                 projectId: "story2-60345",
                 storageBucket: "story2-60345.firebasestorage.app",
@@ -29,7 +30,7 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'couple-diary-final';
         
         const ANNIVERSARY_DATE = new Date('2025-05-28');
-        const SECRET_CODE = "EVOL"; // 요청하신 비밀 코드
+        const SECRET_CODE = "EVOL";
 
         let photos = [];
         let messages = [];
@@ -44,46 +45,40 @@
             dark: { primary: 'bg-gray-800', text: 'text-gray-800', light: 'bg-gray-100', border: 'border-gray-300', bg: 'bg-[#F5F5F5]', memoSelf: 'bg-gray-700 text-white', memoOther: 'bg-white text-gray-700' }
         };
 
-        // 앱 데이터 로드 및 리스너 설정
         async function startApp() {
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('app-screen').classList.remove('hidden');
             
-            // 사진 데이터 실시간 구독
             onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'photos'), (snap) => {
                 photos = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => new Date(b.date) - new Date(a.date));
                 renderContent();
-            }, (err) => console.error("Photo Error:", err));
+            }, (err) => console.error(err));
 
-            // 메시지 데이터 실시간 구독
             onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), (snap) => {
                 messages = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.timestamp - b.timestamp);
                 renderContent();
-            }, (err) => console.error("Message Error:", err));
+            }, (err) => console.error(err));
 
-            // 테마 설정 구독
             onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'appearance'), (snap) => {
                 if (snap.exists()) {
                     currentTheme = snap.data().themeId || 'pink';
                     updateThemeUI();
                 }
-            }, (err) => console.error("Theme Error:", err));
+            }, (err) => console.error(err));
         }
 
-        // 비밀 코드 확인 로직 (가장 안정적이었던 이전 버전 방식)
         window.checkCode = async () => {
             const input = document.getElementById('pass-input');
             const btn = document.getElementById('connect-btn');
             const error = document.getElementById('error-msg');
             const val = input.value.trim().toUpperCase();
 
-            // 1. 먼저 로컬에서 코드를 확인
             if (val === SECRET_CODE) {
                 btn.innerText = "연결 중...";
                 btn.disabled = true;
+                error.classList.add('hidden');
                 
                 try {
-                    // 2. 코드가 맞으면 Firebase 인증 수행
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
@@ -92,14 +87,12 @@
                     currentUser = auth.currentUser;
                     startApp();
                 } catch (err) {
-                    console.error("Auth Error:", err);
-                    error.innerText = "서버 연결에 실패했습니다.";
+                    error.innerText = "로그인 오류가 발생했습니다.";
                     error.classList.remove('hidden');
                     btn.innerText = "Start";
                     btn.disabled = false;
                 }
             } else {
-                // 코드가 틀린 경우
                 error.innerText = "비밀 코드가 올바르지 않습니다.";
                 error.classList.remove('hidden');
                 input.value = '';
@@ -154,31 +147,29 @@
                                 </div>
                             `).join('') || '<div class="w-full py-24 text-center text-gray-300 font-bold italic">아직 기록된 사진이 없어요</div>'}
                         </div>
-                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 px-4">
-                            <div class="bg-white/70 backdrop-blur-sm p-8 rounded-[2.5rem] shadow-xl border border-white relative overflow-hidden group">
+                            <div class="bg-white/70 backdrop-blur-sm p-8 rounded-[2.5rem] shadow-xl border border-white relative overflow-hidden">
                                 <h3 class="text-xl font-black mb-6 flex items-center gap-2 ${theme.text}"><i data-lucide="camera" class="w-5 h-5"></i> 오늘 기록하기</h3>
                                 <input type="text" id="upload-caption" placeholder="무슨 일이 있었나요?" class="w-full p-4 bg-white/50 rounded-2xl mb-4 outline-none font-bold border-2 border-transparent focus:border-gray-100">
                                 <input type="date" id="upload-date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-4 bg-white/50 rounded-2xl mb-6 outline-none font-bold border-2 border-transparent focus:border-gray-100">
-                                <label class="block w-full py-4 ${theme.primary} text-white text-center rounded-2xl font-black cursor-pointer active:scale-95 transition-all shadow-lg hover:brightness-110">
+                                <label class="block w-full py-4 ${theme.primary} text-white text-center rounded-2xl font-black cursor-pointer active:scale-95 transition-all shadow-lg">
                                     사진 선택 및 저장
                                     <input type="file" id="file-input" class="hidden" accept="image/*" onchange="uploadPhoto(this)">
                                 </label>
                             </div>
-
                             <div class="bg-white/70 backdrop-blur-sm p-8 rounded-[2.5rem] shadow-xl border border-white flex flex-col h-[500px]">
                                 <h3 class="text-xl font-black mb-6 flex items-center gap-2 ${theme.text}"><i data-lucide="message-circle" class="w-5 h-5"></i> 우리들의 쪽지</h3>
                                 <div id="memo-list" class="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 no-scrollbar">
                                     ${messages.map(m => `
                                         <div class="flex flex-col ${m.authorId === currentUser?.uid ? 'items-end' : 'items-start'}">
-                                            <div class="${m.authorId === currentUser?.uid ? theme.memoSelf : theme.memoOther} px-5 py-3 rounded-[1.2rem] max-w-[85%] shadow-sm border border-black/5">
+                                            <div class="${m.authorId === currentUser?.uid ? theme.memoSelf : theme.memoOther} px-5 py-3 rounded-[1.2rem] max-w-[85%] shadow-sm">
                                                 <p class="font-bold text-sm">${m.text}</p>
                                             </div>
                                         </div>
                                     `).join('')}
                                 </div>
                                 <div class="flex gap-2">
-                                    <input type="text" id="memo-input" placeholder="하고 싶은 말..." class="flex-1 p-4 bg-white/50 rounded-2xl outline-none font-bold border-2 border-transparent focus:border-gray-100" onkeydown="if(event.key==='Enter') sendMemo()">
+                                    <input type="text" id="memo-input" placeholder="하고 싶은 말..." class="flex-1 p-4 bg-white/50 rounded-2xl outline-none font-bold" onkeydown="if(event.key==='Enter') sendMemo()">
                                     <button onclick="sendMemo()" class="${theme.primary} p-4 rounded-2xl text-white shadow-lg active:scale-90 transition-all">
                                         <i data-lucide="send"></i>
                                     </button>
@@ -206,9 +197,9 @@
                 container.innerHTML = `
                     <div class="px-4 max-w-md mx-auto space-y-4 animate-fade-in">
                         ${Object.keys(THEMES).map(id => `
-                            <button onclick="saveTheme('${id}')" class="w-full p-6 rounded-[2rem] bg-white/70 border-4 ${currentTheme === id ? THEMES[id].border : 'border-white'} flex items-center justify-between transition-all shadow-md group">
+                            <button onclick="saveTheme('${id}')" class="w-full p-6 rounded-[2rem] bg-white/70 border-4 ${currentTheme === id ? THEMES[id].border : 'border-white'} flex items-center justify-between transition-all shadow-md">
                                 <div class="flex items-center gap-4">
-                                    <div class="w-10 h-10 rounded-full ${THEMES[id].primary} shadow-inner group-hover:scale-110 transition-transform"></div>
+                                    <div class="w-10 h-10 rounded-full ${THEMES[id].primary}"></div>
                                     <span class="font-black text-gray-700 uppercase tracking-widest">${id}</span>
                                 </div>
                                 ${currentTheme === id ? '<i data-lucide="check" class="text-gray-800"></i>' : ''}
@@ -255,8 +246,6 @@
     </style>
 </head>
 <body class="bg-[#FFF9FB]">
-
-    <!-- LOGIN SCREEN -->
     <div id="login-screen" class="fixed inset-0 z-[100] bg-[#FFF9FB] flex items-center justify-center p-6">
         <div class="bg-white p-12 rounded-[4rem] shadow-2xl w-full max-w-md text-center border-[12px] border-white animate-fade-in">
             <div class="w-24 h-24 bg-pink-100 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-inner rotate-12">
@@ -264,24 +253,13 @@
             </div>
             <h1 class="text-4xl font-black mb-3 text-gray-800 tracking-tighter uppercase italic">LOVE DIARY</h1>
             <p class="text-gray-300 text-[11px] font-bold mb-12 tracking-[0.4em] uppercase">Private Couple Space</p>
-            
             <div class="space-y-4">
-                <input type="text" 
-                       id="pass-input" 
-                       placeholder="ENTER CODE" 
-                       autocomplete="off"
-                       class="w-full py-6 bg-gray-50 rounded-3xl border-4 border-transparent focus:border-pink-100 outline-none text-center font-black text-2xl tracking-[0.3em] transition-all">
+                <input type="text" id="pass-input" placeholder="ENTER CODE" class="w-full py-6 bg-gray-50 rounded-3xl border-4 border-transparent focus:border-pink-100 outline-none text-center font-black text-2xl tracking-[0.3em] transition-all">
                 <p id="error-msg" class="text-red-400 text-[10px] font-bold hidden uppercase tracking-widest"></p>
-                <button onclick="checkCode()" 
-                        id="connect-btn"
-                        class="w-full bg-pink-500 text-white font-black py-6 rounded-3xl shadow-xl shadow-pink-100 active:scale-95 transition-all text-xl uppercase tracking-[0.1em]">
-                    Start
-                </button>
+                <button onclick="checkCode()" id="connect-btn" class="w-full bg-pink-500 text-white font-black py-6 rounded-3xl shadow-xl shadow-pink-100 active:scale-95 transition-all text-xl uppercase tracking-[0.1em]">Start</button>
             </div>
         </div>
     </div>
-
-    <!-- MAIN APP SCREEN -->
     <div id="app-screen" class="hidden">
         <header class="bg-white/70 backdrop-blur-xl sticky top-0 z-50 px-8 py-6 border-b border-white">
             <div class="max-w-5xl mx-auto flex items-center justify-between">
@@ -296,17 +274,14 @@
                 </button>
             </div>
         </header>
-
         <main class="max-w-5xl mx-auto py-10 space-y-12">
             <nav class="flex justify-center gap-3 p-3 bg-white/40 backdrop-blur-md rounded-[2.5rem] w-fit mx-auto shadow-sm border border-white">
                 <button onclick="setView('home')" class="px-10 py-3 rounded-[1.8rem] font-black text-sm text-gray-400 hover:bg-white hover:text-gray-800 transition-all shadow-sm">HOME</button>
                 <button onclick="setView('gallery')" class="px-10 py-3 rounded-[1.8rem] font-black text-sm text-gray-400 hover:bg-white hover:text-gray-800 transition-all shadow-sm">GALLERY</button>
                 <button onclick="setView('theme')" class="px-10 py-3 rounded-[1.8rem] font-black text-sm text-gray-400 hover:bg-white hover:text-gray-800 transition-all shadow-sm">THEME</button>
             </nav>
-
             <div id="main-content"></div>
         </main>
     </div>
-
 </body>
 </html>
